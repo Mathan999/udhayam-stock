@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 import { ref, onValue, off } from 'firebase/database';
 import { database } from './firebase';
-import { Download, RefreshCw, Search, Filter, Smartphone, AlertCircle, Loader2, Package } from 'lucide-react';
+import { Download, RefreshCw, Search, Filter, Smartphone, AlertCircle, Loader2, Package, Bell, X, CheckCircle, Info } from 'lucide-react';
 
 const CustomerOrder = () => {
   const [orders, setOrders] = useState([]);
@@ -13,7 +13,14 @@ const CustomerOrder = () => {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [installing, setInstalling] = useState(false); // For "download" animation
+  const [installing, setInstalling] = useState(false);
+  
+  // New notification states
+  const [notifications, setNotifications] = useState([]);
+  const [, setUnreadNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [realtimeNotifications, setRealtimeNotifications] = useState([]);
 
   // Check if installed
   useEffect(() => {
@@ -21,6 +28,66 @@ const CustomerOrder = () => {
       setIsInstalled(true);
     }
   }, []);
+
+  // Load notifications from Firebase
+  useEffect(() => {
+    const notificationsRef = ref(database, 'notifications');
+    const handleNotificationData = (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const loadedNotifications = Object.entries(data)
+          .map(([key, value]) => ({
+            id: key,
+            ...value
+          }))
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
+        setNotifications(loadedNotifications);
+        const unreadCount = loadedNotifications.filter(n => !n.read).length;
+        setNotificationCount(unreadCount);
+        setUnreadNotifications(loadedNotifications.filter(n => !n.read));
+
+        // Show real-time notification for new orders
+        const latestNotification = loadedNotifications[0];
+        if (latestNotification && !latestNotification.read && latestNotification.type === 'new_order') {
+          showRealtimeNotification(latestNotification);
+        }
+      }
+    };
+
+    onValue(notificationsRef, handleNotificationData);
+    return () => off(notificationsRef);
+  }, []);
+
+  // Real-time notification display
+  const showRealtimeNotification = (notification) => {
+    const id = Date.now();
+    const realtimeNotif = {
+      id,
+      ...notification,
+      showTime: new Date().toLocaleTimeString()
+    };
+
+    setRealtimeNotifications(prev => [...prev, realtimeNotif]);
+
+    // Play notification sound
+    try {
+      const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBj2c4+67eCMFLIjP8+WXQQoXY7Tl4axYEgtFpeCzwmwhBj2c6+m9fyMFLIvH8+KVQgoZY7bn7aJRFQhLqeC2ymghBj+a2+DFeCMFKojO8+GVQgoaYrTh27JjFwlBmePxtmYdBTiN2+3BeSkFKIHI9N+UQQsVW7PvybRdGAg+j+Pp1W0gCTyo4++GQAoCdsvtxqtkHgU9mO/ltUwgCDyV4++JRA0EdcrvxqliHAU8l+rtuEslBzqR5+yHRAoEdcnug65lHwU+leJ9gUQNB4jH8+aUP');
+      audio.play().catch(() => {});
+    } catch (error) {
+      console.log('Audio notification failed:', error);
+    }
+
+    // Auto remove after 8 seconds
+    setTimeout(() => {
+      setRealtimeNotifications(prev => prev.filter(n => n.id !== id));
+    }, 8000);
+  };
+
+  // Remove realtime notification manually
+  const removeRealtimeNotification = (id) => {
+    setRealtimeNotifications(prev => prev.filter(n => n.id !== id));
+  };
 
   // PWA events
   useEffect(() => {
@@ -103,6 +170,36 @@ const CustomerOrder = () => {
       setLoading(false);
     });
     return () => off(customerOrdersRef);
+  }, []);
+
+  // Listen for stock updates (new feature)
+  useEffect(() => {
+    const stockRef = ref(database, 'stock');
+    const handleStockData = (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const stockEntries = Object.entries(data);
+        const latestStock = stockEntries[stockEntries.length - 1];
+        
+        if (latestStock && latestStock[1].stockUpdate) {
+          const stockUpdate = latestStock[1].stockUpdate;
+          // Show notification for stock update
+          const stockNotification = {
+            id: Date.now(),
+            type: 'stock_update',
+            title: `Stock Updated - Order #${stockUpdate.orderTokenNumber}`,
+            message: `Items: ${stockUpdate.items.length}, Value: ₹${stockUpdate.totalOrderValue}`,
+            timestamp: stockUpdate.updatedAt,
+            orderData: stockUpdate
+          };
+          
+          showRealtimeNotification(stockNotification);
+        }
+      }
+    };
+
+    onValue(stockRef, handleStockData);
+    return () => off(stockRef);
   }, []);
 
   const filteredOrders = orders
@@ -199,6 +296,22 @@ const CustomerOrder = () => {
     setTimeout(() => setLoading(false), 1000);
   };
 
+  const getNotificationIcon = (type) => {
+    switch (type) {
+      case 'new_order': return <Package size={20} className="text-green-600" />;
+      case 'stock_update': return <Info size={20} className="text-blue-600" />;
+      default: return <Bell size={20} className="text-gray-600" />;
+    }
+  };
+
+  const getNotificationColor = (type) => {
+    switch (type) {
+      case 'new_order': return 'bg-green-50 border-green-200 text-green-800';
+      case 'stock_update': return 'bg-blue-50 border-blue-200 text-blue-800';
+      default: return 'bg-gray-50 border-gray-200 text-gray-800';
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 md:p-8">
@@ -215,12 +328,58 @@ const CustomerOrder = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-6 md:p-8">
       <div className="max-w-7xl mx-auto">
+        {/* Real-time notifications */}
+        <div className="fixed top-4 right-4 z-50 space-y-2">
+          {realtimeNotifications.map((notification) => (
+            <div
+              key={notification.id}
+              className={`max-w-sm p-4 rounded-lg shadow-lg border transition-all duration-500 animate-slide-in ${getNotificationColor(notification.type)}`}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-start space-x-3">
+                  {getNotificationIcon(notification.type)}
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-sm">{notification.title}</h4>
+                    <p className="text-xs mt-1">{notification.message}</p>
+                    <p className="text-xs opacity-70 mt-1">{notification.showTime}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => removeRealtimeNotification(notification.id)}
+                  className="opacity-70 hover:opacity-100 transition"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
           <div>
-            <h2 className="text-3xl font-bold text-gray-900">Customer Orders</h2>
+            <h2 className="text-3xl font-bold text-gray-900 flex items-center">
+              Customer Orders
+              {notificationCount > 0 && (
+                <span className="ml-3 px-2 py-1 bg-red-500 text-white text-sm rounded-full">
+                  {notificationCount}
+                </span>
+              )}
+            </h2>
             <p className="text-gray-600 mt-1">Total Orders: {filteredOrders.length} | Showing: {filteredOrders.length} results</p>
           </div>
           <div className="flex space-x-4 mt-4 sm:mt-0">
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center relative"
+            >
+              <Bell size={16} className="mr-2" />
+              Notifications
+              {notificationCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </span>
+              )}
+            </button>
             <button onClick={refreshOrders} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center">
               <RefreshCw size={16} className="mr-2" />
               Refresh
@@ -248,6 +407,53 @@ const CustomerOrder = () => {
             )}
           </div>
         </div>
+
+        {/* Notification Panel */}
+        {showNotifications && (
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Recent Notifications</h3>
+              <button
+                onClick={() => setShowNotifications(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="max-h-96 overflow-y-auto space-y-3">
+              {notifications.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">No notifications yet</p>
+              ) : (
+                notifications.slice(0, 10).map((notification) => (
+                  <div
+                    key={notification.id}
+                    className={`p-3 rounded-lg border ${notification.read ? 'bg-gray-50' : getNotificationColor(notification.type)}`}
+                  >
+                    <div className="flex items-start space-x-3">
+                      {getNotificationIcon(notification.type)}
+                      <div className="flex-1">
+                        <h4 className="font-medium text-sm">{notification.title}</h4>
+                        <p className="text-sm mt-1">{notification.message}</p>
+                        <p className="text-xs text-gray-500 mt-2">
+                          {new Date(notification.timestamp).toLocaleString()}
+                        </p>
+                        {notification.orderData && (
+                          <div className="mt-2 text-xs text-gray-600">
+                            <span>Token: {notification.orderData.tokenNumber}</span>
+                            <span className="mx-2">|</span>
+                            <span>Customer: {notification.orderData.customerName}</span>
+                            <span className="mx-2">|</span>
+                            <span>Amount: ₹{notification.orderData.totalAmount}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Guide Modal for Real APK */}
         {showInstallGuide && (
@@ -278,7 +484,7 @@ const CustomerOrder = () => {
           </div>
         )}
 
-        {/* Filters & Table - Unchanged from previous */}
+        {/* Filters & Search */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="relative">
@@ -381,7 +587,7 @@ const CustomerOrder = () => {
           </div>
         )}
 
-        {/* Stats - Unchanged */}
+        {/* Stats */}
         {orders.length > 0 && (
           <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-lg shadow-md p-6">
@@ -403,6 +609,22 @@ const CustomerOrder = () => {
           </div>
         )}
       </div>
+
+      <style jsx>{`
+        @keyframes slide-in {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        .animate-slide-in {
+          animation: slide-in 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 };

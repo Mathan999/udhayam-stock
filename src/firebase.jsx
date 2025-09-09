@@ -4,13 +4,14 @@ import { getStorage } from 'firebase/storage';
 import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
-apiKey: "AIzaSyCQpkX-CbV1dVP4zwclcscm8-Ye3poBXTY",
-  authDomain: "mahindra-sri-crackers.firebaseapp.com",
-  projectId: "mahindra-sri-crackers",
-  storageBucket: "mahindra-sri-crackers.firebasestorage.app",
-  messagingSenderId: "99186282854",
-  appId: "1:99186282854:web:286921646c9a653aa638a7",
-  measurementId: "G-RRCGHWHJXL"
+ apiKey: "AIzaSyCTYWrF20kn1_SDsYrtDQir0GkUbQ19_xQ",
+  authDomain: "udhayamcracker.firebaseapp.com",
+  databaseURL: "https://udhayamcracker-default-rtdb.firebaseio.com",
+  projectId: "udhayamcracker",
+  storageBucket: "udhayamcracker.appspot.com",
+  messagingSenderId: "988190074194",
+  appId: "1:988190074194:web:062dc413ed31ea0999068b",
+  measurementId: "G-XHNE1RW2Y8"
 };
 
 const app = initializeApp(firebaseConfig);
